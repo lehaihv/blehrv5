@@ -43,21 +43,31 @@ static int
 gatt_svr_chr_access_temperature(uint16_t conn_handle, uint16_t attr_handle,
                                 struct ble_gatt_access_ctxt *ctxt, void *arg);
 
+/* Static 128-bit UUID instances for use in ble_uuid_cmp() calls */
+static const ble_uuid128_t gatt_hrs_uuid              = GATT_HRS_UUID_INIT;
+static const ble_uuid128_t gatt_hrs_measurement_uuid  = GATT_HRS_MEASUREMENT_UUID_INIT;
+static const ble_uuid128_t gatt_hrs_body_loc_uuid     = GATT_HRS_BODY_SENSOR_LOC_UUID_INIT;
+static const ble_uuid128_t gatt_device_info_uuid      = GATT_DEVICE_INFO_UUID_INIT;
+static const ble_uuid128_t gatt_manufacturer_uuid     = GATT_MANUFACTURER_NAME_UUID_INIT;
+static const ble_uuid128_t gatt_model_num_uuid        = GATT_MODEL_NUMBER_UUID_INIT;
+static const ble_uuid128_t gatt_temp_service_uuid     = GATT_TEMP_SERVICE_UUID_INIT;
+static const ble_uuid128_t gatt_temp_measurement_uuid = GATT_TEMP_MEASUREMENT_UUID_INIT;
+
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     {
         /* Service: Heart-rate */
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(GATT_HRS_UUID),
+        .uuid = &gatt_hrs_uuid.u,
         .characteristics = (struct ble_gatt_chr_def[])
         { {
                 /* Characteristic: Heart-rate measurement */
-                .uuid = BLE_UUID16_DECLARE(GATT_HRS_MEASUREMENT_UUID),
+                .uuid = &gatt_hrs_measurement_uuid.u,
                 .access_cb = gatt_svr_chr_access_heart_rate,
                 .val_handle = &hrs_hrm_handle,
                 .flags = BLE_GATT_CHR_F_NOTIFY,
             }, {
                 /* Characteristic: Body sensor location */
-                .uuid = BLE_UUID16_DECLARE(GATT_HRS_BODY_SENSOR_LOC_UUID),
+                .uuid = &gatt_hrs_body_loc_uuid.u,
                 .access_cb = gatt_svr_chr_access_heart_rate,
                 .flags = BLE_GATT_CHR_F_READ,
             }, {
@@ -69,16 +79,16 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     {
         /* Service: Device Information */
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(GATT_DEVICE_INFO_UUID),
+        .uuid = &gatt_device_info_uuid.u,
         .characteristics = (struct ble_gatt_chr_def[])
         { {
-                /* Characteristic: * Manufacturer name */
-                .uuid = BLE_UUID16_DECLARE(GATT_MANUFACTURER_NAME_UUID),
+                /* Characteristic: Manufacturer name */
+                .uuid = &gatt_manufacturer_uuid.u,
                 .access_cb = gatt_svr_chr_access_device_info,
                 .flags = BLE_GATT_CHR_F_READ,
             }, {
                 /* Characteristic: Model number string */
-                .uuid = BLE_UUID16_DECLARE(GATT_MODEL_NUMBER_UUID),
+                .uuid = &gatt_model_num_uuid.u,
                 .access_cb = gatt_svr_chr_access_device_info,
                 .flags = BLE_GATT_CHR_F_READ,
             }, {
@@ -90,11 +100,11 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     {
         /* Service: Temperature */
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(GATT_TEMP_SERVICE_UUID),
+        .uuid = &gatt_temp_service_uuid.u,
         .characteristics = (struct ble_gatt_chr_def[])
         { {
                 /* Characteristic: Temperature Measurement */
-                .uuid = BLE_UUID16_DECLARE(GATT_TEMP_MEASUREMENT_UUID),
+                .uuid = &gatt_temp_measurement_uuid.u,
                 .access_cb = gatt_svr_chr_access_temperature,
                 .val_handle = &temp_val_handle,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
@@ -115,14 +125,10 @@ gatt_svr_chr_access_heart_rate(uint16_t conn_handle, uint16_t attr_handle,
 {
     /* Sensor location, set to "Chest" */
     static uint8_t body_sens_loc = 0x01;
-    uint16_t uuid;
     int rc;
 
-    uuid = ble_uuid_u16(ctxt->chr->uuid);
-
-    if (uuid == GATT_HRS_BODY_SENSOR_LOC_UUID) {
+    if (ble_uuid_cmp(ctxt->chr->uuid, &gatt_hrs_body_loc_uuid.u) == 0) {
         rc = os_mbuf_append(ctxt->om, &body_sens_loc, sizeof(body_sens_loc));
-
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
@@ -134,17 +140,14 @@ static int
 gatt_svr_chr_access_device_info(uint16_t conn_handle, uint16_t attr_handle,
                                 struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    uint16_t uuid;
     int rc;
 
-    uuid = ble_uuid_u16(ctxt->chr->uuid);
-
-    if (uuid == GATT_MODEL_NUMBER_UUID) {
+    if (ble_uuid_cmp(ctxt->chr->uuid, &gatt_model_num_uuid.u) == 0) {
         rc = os_mbuf_append(ctxt->om, model_num, strlen(model_num));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
 
-    if (uuid == GATT_MANUFACTURER_NAME_UUID) {
+    if (ble_uuid_cmp(ctxt->chr->uuid, &gatt_manufacturer_uuid.u) == 0) {
         rc = os_mbuf_append(ctxt->om, manuf_name, strlen(manuf_name));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
@@ -159,13 +162,10 @@ gatt_svr_chr_access_temperature(uint16_t conn_handle, uint16_t attr_handle,
 {
     /* Simulated temperature value (stored as integer: 2500 = 25.00°C) */
     static uint32_t current_temperature = 3700;
-    uint16_t uuid;
     int rc;
     uint8_t temp_data[5];  /* 1 byte flags + 4 bytes temperature */
 
-    uuid = ble_uuid_u16(ctxt->chr->uuid);
-
-    if (uuid == GATT_TEMP_MEASUREMENT_UUID) {
+    if (ble_uuid_cmp(ctxt->chr->uuid, &gatt_temp_measurement_uuid.u) == 0) {
         /* Build temperature data in Health Thermometer format:
          * Byte 0: Flags (0x00 = Celsius, no timestamp)
          * Bytes 1-4: Temperature in IEEE 11073-20601 format
@@ -175,7 +175,7 @@ gatt_svr_chr_access_temperature(uint16_t conn_handle, uint16_t attr_handle,
         temp_data[2] = (current_temperature >> 8) & 0xFF;  /* Mantissa byte 1 */
         temp_data[3] = (current_temperature >> 16) & 0xFF; /* Mantissa byte 2 */
         temp_data[4] = 0xFE;  /* Exponent: -2 (value * 10^-2 = °C) */
-        
+
         rc = os_mbuf_append(ctxt->om, temp_data, sizeof(temp_data));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
